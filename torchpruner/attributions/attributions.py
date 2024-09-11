@@ -13,10 +13,11 @@ ACTIVATIONS = [ReLU, ReLU6, RReLU, LeakyReLU, Sigmoid, Softplus, Tanh]
 
 
 class _AttributionMetric(ABC):
-    def __init__(self, model, data_generator, criterion, device, reduction="mean"):
+    def __init__(self, embedder, data_generator, criterion, device, reduction="mean"):
         assert reduction in ["mean", "none", "sum"] or callable(reduction), \
             'Reduction must be a string in ["mean", "none", "sum"] or a function'
-        self.model = model
+        self.embedder = embedder
+        self.model = embedder.model
         self.data_gen = data_generator
         self.criterion = criterion
         self.device = device
@@ -54,7 +55,7 @@ class _AttributionMetric(ABC):
                     self.iterator = iter(self.data_gen)
                     (x, x_ideal, y) = next(self.iterator)
                 x, x_ideal, y = x.to(self.device), x_ideal.to(self.device), y.to(self.device)
-                loss = self.criterion(self.model(x), x_ideal, y, self.device)
+                loss = self.criterion(self.model(x), x_ideal, y, self.device, self.embedder)
                 if cumulative_loss is None:
                     print('first if block activated') #purely for debugging; should take this out
                     cumulative_loss = loss.reshape(1)
