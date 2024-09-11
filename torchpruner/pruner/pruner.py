@@ -103,6 +103,10 @@ class Pruner:
         param = getattr(module, parameter_name)
         if param is not None:
             n = param.data.shape[axis]
+            print('the param: ', param)
+            print('param shape: ', param.data.shape)
+            print('indices: ', indices)
+            print('indices shape: ', indices.shape)
             mask = np.ones(n, dtype=bool)
             mask[indices] = False
             keep_indices = torch.tensor(np.arange(n)[mask]).to(self.device)
@@ -128,15 +132,17 @@ class Pruner:
 
     def _nanify_hook(self, indices):
         """
-        Hook to set nans long dim 1 of output Tensor to a module
+        Hook to set nans along dim 1 of output Tensor to a module
         (simulated pruning)
         :param indices:
         :return:
+
+        JB - changed this to be along dim -1 for higher dimensional tensors.
         """
 
         def _hook(_, __, output):
             return output.index_fill_(
-                1,
+                -1,
                 torch.tensor(indices).to(self.device),
                 torch.tensor(np.nan).to(self.device),
             )
@@ -147,13 +153,15 @@ class Pruner:
     def _detect_nan_hook():
         """
         Hook to detect nans along dim 1 of input Tensor to a module
+
+        JB - changed this to be along dim -1
         :return:
         """
 
         def _hook(module, input, __):
             input = input[0]
             setattr(
-                module, "_activation_len", float(input.shape[1])
+                module, "_activation_len", float(input.shape[-1])
             )
             while len(input.shape) > 2:
                 input = input.sum(-1)
@@ -179,6 +187,10 @@ class Pruner:
                 .float()
                 .to(self.device)
             )
+            # MMNE requires complex valued inputs 
+            if str(type(self.model)) == "<class 'models.multimodal_flow_unet_embedder.MultiModalFlowUnet'>":
+                x = torch.complex(x, x).to(self.device)[0]
+        print('x shape: ', x.shape)
         y = self.model(x)
         torch.backends.cudnn.deterministic = d
         torch.backends.cudnn.benchmark = b

@@ -9,9 +9,10 @@ class ShapleyAttributionMetric(_AttributionMetric):
     Compute attributions as approximate Shapley values using sampling.
     """
 
-    def __init__(self, *args, sv_samples=5, **kwargs):
+    def __init__(self, *args, sv_samples=5, epoch_len=1000, **kwargs):
         super().__init__(*args, **kwargs)
         self.samples = sv_samples
+        self.epoch_len = epoch_len
         self.mask_indices = []
 
     def run(self, module, sv_samples=None, **kwargs):
@@ -68,10 +69,14 @@ class ShapleyAttributionMetric(_AttributionMetric):
         Implementation of Shapley value monte carlo sampling.
         No further changes to the model are necessary but this can be quite slow.
         See run_module_with_partial() for a faster version that uses partial evaluation.
+
+        JB Alterations: Created an iterator object to enable subsampling from our dataset with run_all_forward
+        without starting from the beginning each time
         """
         with torch.no_grad():
             self.mask_indices = []
             handle = module.register_forward_hook(self._forward_hook())
+            self.iterator = iter(self.data_gen)
             original_loss = self.run_all_forward()
             n = module._tp_prune_dim  # output dimension
             sv = np.zeros((original_loss.shape[0], n))
@@ -91,7 +96,7 @@ class ShapleyAttributionMetric(_AttributionMetric):
 
     def _forward_hook(self):
         def _hook(module, _, output):
-            module._tp_prune_dim = output.shape[1]
+            module._tp_prune_dim = output.shape[-1] #changed to -1 to account for higher dimensional layer input
             return output.index_fill_(
                 1, torch.tensor(self.mask_indices).long().to(self.device), 0.0,
             )

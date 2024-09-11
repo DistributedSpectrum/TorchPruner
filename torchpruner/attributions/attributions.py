@@ -38,14 +38,25 @@ class _AttributionMetric(ABC):
             return module
 
     def run_all_forward_MMNE(self):
+        """
+        Changes I made:
+            -account for the webloader data loader returning a list of three objects
+            -account for the loss function requiring more than the parameters currently provided
+            -provide a way to subsample from the dataset
+        """
         self.set_deterministic
         cumulative_loss = None
         with torch.no_grad():
-            for idx, (x, x_ideal, y) in enumerate(self.data_gen):
+            for i in range(self.epoch_len):
+                try:
+                    (x, x_ideal, y) = next(self.iterator)
+                except:
+                    self.iterator = iter(self.data_gen)
+                    (x, x_ideal, y) = next(self.iterator)
                 x, x_ideal, y = x.to(self.device), x_ideal.to(self.device), y.to(self.device)
                 loss = self.criterion(self.model(x), x_ideal, y, self.device)
                 if cumulative_loss is None:
-                    print('first if block activated')
+                    print('first if block activated') #purely for debugging; should take this out
                     cumulative_loss = loss.reshape(1)
                 else:
                     cumulative_loss = torch.cat((cumulative_loss, loss.reshape(1)), 0)
@@ -57,7 +68,7 @@ class _AttributionMetric(ABC):
         Run forward pass on all data in `data_gen`, returning loss for each example
         :return: Tensor
 
-        Changes I need to make:
+        Changes in run_all_forward_MMNE:
             -account for the webloader data loader returning a list of three objects
             -account for the loss function requiring more than the parameters currently provided
         """
