@@ -14,7 +14,7 @@ ACTIVATIONS = [ReLU, ReLU6, RReLU, LeakyReLU, Sigmoid, Softplus, Tanh]
 
 class _AttributionMetric(ABC):
     """ 
-    Altered this class to accept a PL object instead of PyTorch model as the first arg.
+    Altered this class to accept a NufEmbedder object instead of PyTorch model as the first arg.
     """
     def __init__(self, embedder, data_generator, criterion, device, reduction="mean"):
         assert reduction in ["mean", "none", "sum"] or callable(reduction), \
