@@ -13,6 +13,9 @@ ACTIVATIONS = [ReLU, ReLU6, RReLU, LeakyReLU, Sigmoid, Softplus, Tanh]
 
 
 class _AttributionMetric(ABC):
+    """ 
+    Altered this class to accept a PL object instead of PyTorch model as the first arg.
+    """
     def __init__(self, embedder, data_generator, criterion, device, reduction="mean"):
         assert reduction in ["mean", "none", "sum"] or callable(reduction), \
             'Reduction must be a string in ["mean", "none", "sum"] or a function'
@@ -42,7 +45,7 @@ class _AttributionMetric(ABC):
         """
         Changes I made:
             -account for the webloader data loader returning a list of three objects
-            -account for the loss function requiring more than the parameters currently provided
+            -account for the loss function requiring more than the parameters originally provided
             -provide a way to subsample from the dataset
         """
         self.set_deterministic
@@ -57,7 +60,6 @@ class _AttributionMetric(ABC):
                 x, x_ideal, y = x.to(self.device), x_ideal.to(self.device), y.to(self.device)
                 loss = self.criterion(self.model(x), x_ideal, y, self.device, self.embedder)
                 if cumulative_loss is None:
-                    print('first if block activated') #purely for debugging; should take this out
                     cumulative_loss = loss.reshape(1)
                 else:
                     cumulative_loss = torch.cat((cumulative_loss, loss.reshape(1)), 0)
@@ -71,7 +73,7 @@ class _AttributionMetric(ABC):
 
         Changes in run_all_forward_MMNE:
             -account for the webloader data loader returning a list of three objects
-            -account for the loss function requiring more than the parameters currently provided
+            -account for the loss function requiring more than the parameters originally provided
         """
         if str(type(self.data_gen)) == "<class 'webdataset.compat.WebLoader'>":
             return self.run_all_forward_MMNE()
