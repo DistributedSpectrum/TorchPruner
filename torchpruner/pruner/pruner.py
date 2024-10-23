@@ -18,11 +18,19 @@ class Pruner:
         self.input_size = input_size
         self.optimizer = optimizer
 
-    def prune_model(self, module, indices, cascading_modules=None):
+    def prune_model(self, modules, indices, cascading_modules=None):
         """
         :param pruning_graph:
         :return:
+        JB - slightly altered this function to make it compatible with our models.
+        In particular, added compatibility for pruning multiple modules in parallel if they have the same cascading modules.
         """
+        if not isinstance(modules, list):
+            module = modules
+            modules = [module]
+        else:
+            module = modules[0]
+            
         # Implement nan trick
         # 1. Install forward hook to simulate pruning by settings activations to nan
         module_handle = module.register_forward_hook(self._nanify_hook(indices))
@@ -54,7 +62,8 @@ class Pruner:
                 delattr(next_module, "_nan_indices")
 
         # 5. Finally, prune module
-        self.prune_module(module, indices, direction="out")
+        for module_to_prune in modules:
+            self.prune_module(module_to_prune, indices, direction="out")
 
     def prune_module(self, module, indices, direction="out", original_len=None):
         """

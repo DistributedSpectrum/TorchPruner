@@ -74,6 +74,7 @@ class _AttributionMetric(ABC):
         Changes in run_all_forward_MMNE:
             -account for the webloader data loader returning a list of three objects
             -account for the loss function requiring more than the parameters originally provided
+            -provide a way to subsample from the dataset
         """
         if str(type(self.data_gen)) == "<class 'webdataset.compat.WebLoader'>":
             return self.run_all_forward_MMNE()
