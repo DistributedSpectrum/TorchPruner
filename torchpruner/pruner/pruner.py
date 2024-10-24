@@ -194,9 +194,15 @@ class Pruner:
                 setattr(
                     module, "_activation_len", float(input.shape[-1])
                 )
+                print(f"Original Input shape: {input.shape}")
+                print(f"Original Input: {input}")
                 while len(input.shape) > 2:
                     input = input.sum(0)
+                    print(f"New Input shape: {input.shape}")
+                    print(f"New Input: {input}")
                 input = input.sum(0).flatten(0)
+                print(f"Final input shape: {input.shape}")
+                print(f"Final input: {input}")
                 indices = (
                     torch.isnan(input).nonzero().flatten(0).detach().clone().cpu().numpy()
                 )
