@@ -61,7 +61,7 @@ class Pruner:
                 )
                 delattr(next_module, "_nan_indices")
 
-        # 5. Finally, prune module
+        # 6. Finally, prune module
         for module_to_prune in modules:
             self.prune_module(module_to_prune, indices, direction="out")
 
@@ -148,10 +148,17 @@ class Pruner:
 
         JB - changed this to be along dim -1 for higher dimensional tensors.
         """
+        print(f"Indices: {indices}")
 
-        def _hook(_, __, output):
+        def _hook(module, __, output):
+            if isinstance(module, torch.nn.modules.batchnorm.BatchNorm1d) or isinstance(module, torch.nn.modules.conv.Conv1d):
+                ind = 1
+                print(f'Ind is 1 for module of type {type(module)}.')
+            else:
+                ind = -1
+                print(f'Ind is -1 for module of type {type(module)}.')
             return output.index_fill_(
-                -1,
+                ind,
                 torch.tensor(indices).to(self.device),
                 torch.tensor(np.nan).to(self.device),
             )
@@ -169,19 +176,34 @@ class Pruner:
 
         def _hook(module, input, __):
             input = input[0]
-            setattr(
-                module, "_activation_len", float(input.shape[-1])
-            )
-            while len(input.shape) > 2:
-                input = input.sum(-1)
-            input = input.sum(0).flatten(0)
-            indices = (
-                torch.isnan(input).nonzero().flatten(0).detach().clone().cpu().numpy()
-            )
-            if len(indices) > 0:
+            if isinstance(module, torch.nn.modules.batchnorm.BatchNorm1d) or isinstance(module, torch.nn.modules.conv.Conv1d):
                 setattr(
-                    module, "_nan_indices", indices
+                    module, "_activation_len", float(input.shape[1])
                 )
+                while len(input.shape) > 2:
+                    input = input.sum(0)
+                input = input.sum(-1).flatten(0)
+                indices = (
+                    torch.isnan(input).nonzero().flatten(0).detach().clone().cpu().numpy()
+                )
+                if len(indices) > 0:
+                    setattr(
+                        module, "_nan_indices", indices
+                    )
+            else:
+                setattr(
+                    module, "_activation_len", float(input.shape[-1])
+                )
+                while len(input.shape) > 2:
+                    input = input.sum(0)
+                input = input.sum(0).flatten(0)
+                indices = (
+                    torch.isnan(input).nonzero().flatten(0).detach().clone().cpu().numpy()
+                )
+                if len(indices) > 0:
+                    setattr(
+                        module, "_nan_indices", indices
+                    )                
         return _hook
 
     def _run_forward(
