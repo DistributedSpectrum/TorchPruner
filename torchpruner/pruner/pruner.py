@@ -18,12 +18,14 @@ class Pruner:
         self.input_size = input_size
         self.optimizer = optimizer
 
-    def prune_model(self, modules, indices, cascading_modules=None):
+    def prune_model(self, modules, indices, cascading_modules=None, preserve_dims=False):
         """
         :param pruning_graph:
         :return:
-        JB - slightly altered this function to make it compatible with our models.
-        In particular, added compatibility for pruning multiple modules in parallel if they have the same cascading modules.
+        JB 
+        - slightly altered this function to make it compatible with our models.
+            In particular, added compatibility for pruning multiple modules in parallel if they have the same cascading modules.
+        - Added option to zero out pruned parameters instead of modifying weight dimensions.
         """
         if not isinstance(modules, list):
             module = modules
@@ -57,15 +59,16 @@ class Pruner:
                 self.prune_module(
                     next_module, getattr(next_module, "_nan_indices"),
                     direction="in",
-                    original_len=getattr(next_module, "_activation_len")
+                    original_len=getattr(next_module, "_activation_len"),
+                    preserve_dims=preserve_dims
                 )
                 delattr(next_module, "_nan_indices")
 
         # 6. Finally, prune module
         for module_to_prune in modules:
-            self.prune_module(module_to_prune, indices, direction="out")
+            self.prune_module(module_to_prune, indices, direction="out", preserve_dims=preserve_dims)
 
-    def prune_module(self, module, indices, direction="out", original_len=None):
+    def prune_module(self, module, indices, direction="out", original_len=None, preserve_dims=False):
         """
         Prune a module parameters. This method provides an higher level API for
         prune_parameter with understanding of the module class and its corresponding
@@ -74,6 +77,7 @@ class Pruner:
         :param indices:
         :param direction:
         :return:
+        JB - Added option to zero out pruned parameters instead of modifying weight dimensions.
         """
         assert direction in ["out", "in"], "direction should be 'out' or 'in'"
         if direction is "out":
@@ -87,20 +91,20 @@ class Pruner:
 
         print(f"Pruning {len(indices)} units from {module} ({direction})")
         if direction is "out":
-            self.prune_parameter(module, "weight", indices, axis=0)
-            self.prune_parameter(module, "bias", indices, axis=0)
+            self.prune_parameter(module, "weight", indices, axis=0, preserve_dims=preserve_dims)
+            self.prune_parameter(module, "bias", indices, axis=0, preserve_dims=preserve_dims)
         else:
             if isinstance(module, nn.Linear) or isinstance(module, _ConvNd):
-                self.prune_parameter(module, "weight", indices, axis=1)
+                self.prune_parameter(module, "weight", indices, axis=1, preserve_dims=preserve_dims)
             elif isinstance(module, _BatchNorm):
-                self.prune_parameter(module, "weight", indices, axis=0)
-                self.prune_parameter(module, "bias", indices, axis=0)
-                self.prune_parameter(module, "running_mean", indices, axis=0)
-                self.prune_parameter(module, "running_var", indices, axis=0)
+                self.prune_parameter(module, "weight", indices, axis=0, preserve_dims=preserve_dims)
+                self.prune_parameter(module, "bias", indices, axis=0, preserve_dims=preserve_dims)
+                self.prune_parameter(module, "running_mean", indices, axis=0, preserve_dims=preserve_dims)
+                self.prune_parameter(module, "running_var", indices, axis=0, preserve_dims=preserve_dims)
             elif isinstance(module, _DropoutNd):
                 self._adjust_dropout(module, indices, original_len)
 
-    def prune_parameter(self, module, parameter_name, indices, axis=0):
+    def prune_parameter(self, module, parameter_name, indices, axis=0, preserve_dims=False):
         """
         Prune a single parameter Tensor within a module
         :param module:
@@ -108,6 +112,7 @@ class Pruner:
         :param indices:
         :param axis:
         :return:
+        JB - Added option to zero out pruned parameters instead of modifying weight dimensions.
         """
         param = getattr(module, parameter_name)
         if param is not None:
@@ -119,13 +124,22 @@ class Pruner:
             mask = np.ones(n, dtype=bool)
             mask[indices] = False
             keep_indices = torch.tensor(np.arange(n)[mask]).to(self.device)
-            param.data = param.data.index_select(axis, keep_indices)
+            if not preserve_dims:
+                param.data = param.data.index_select(axis, keep_indices)
+            else:
+                param.data = param.data.index_fill_(axis, torch.tensor(indices).to(self.device), 0)
             # If gradient is not None, we need to slice it as well
             if param.grad is not None:
-                param.grad.data = param.grad.data.index_select(axis, keep_indices)
+                if not preserve_dims:
+                    param.grad.data = param.grad.data.index_select(axis, keep_indices)
+                else:
+                    param.grad.data = param.grad.data.index_fill_(axis, torch.tensor(indices).to(self.device), 0)
             # Finally, might need to slice other parameters in the optimizer
             if self.optimizer is not None:
-                OptimizerPruner.prune(self.optimizer, param, axis, keep_indices, self.device)
+                if not preserve_dims:
+                    OptimizerPruner.prune(self.optimizer, param, axis, keep_indices, self.device)
+                else:
+                    raise NotImplementedError("Currently cannot preserve dimensions when pruning Optimizer.")
 
     def _adjust_dropout(self, module, indices, original_len):
         """
